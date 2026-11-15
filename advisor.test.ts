@@ -5,6 +5,7 @@ import "./advisor.js";
 const {
   DEFAULT_WORKER_URL,
   LOREAL_SYSTEM_PROMPT,
+  OFF_TOPIC_REFUSAL_MESSAGE,
   isWorkerConfigured,
   buildRequestMessages,
   extractAssistantReply,
@@ -12,8 +13,8 @@ const {
 } = (globalThis as unknown as { LorealAdvisor: any }).LorealAdvisor;
 
 test("LOREAL_SYSTEM_PROMPT scopes assistant strictly to L'Oréal products and routines", () => {
-  assert.match(LOREAL_SYSTEM_PROMPT, /Only answer questions related to L’Oréal products/i);
-  assert.match(LOREAL_SYSTEM_PROMPT, /politely decline/i);
+  assert.match(LOREAL_SYSTEM_PROMPT, /Do not answer questions unrelated to L’Oréal or beauty/i);
+  assert.match(LOREAL_SYSTEM_PROMPT, /politely refuse/i);
 });
 
 test("isWorkerConfigured rejects default placeholder URL", () => {
@@ -53,13 +54,17 @@ test("extractAssistantReply throws on malformed payload", () => {
   assert.throws(() => extractAssistantReply({}), /Unexpected response format/);
 });
 
-test("getFallbackAdvisorReply returns tailored category recommendations and redirects off-topic queries", () => {
-  assert.match(getFallbackAdvisorReply("Recommend skincare"), /Hyaluronic Acid/);
+test("getFallbackAdvisorReply returns tailored category recommendations and refuses off-topic queries", () => {
+  assert.match(getFallbackAdvisorReply("Should I apply vitamin C before SPF?"), /Hyaluronic Acid/);
   assert.match(getFallbackAdvisorReply("My hair is dry"), /Elvive/);
   assert.match(getFallbackAdvisorReply("Need lipstick and mascara"), /True Match/);
   assert.match(getFallbackAdvisorReply("Evening perfume"), /fragrance/i);
-  assert.match(
+  assert.equal(
+    getFallbackAdvisorReply("Write a Python sorting script"),
+    OFF_TOPIC_REFUSAL_MESSAGE
+  );
+  assert.equal(
     getFallbackAdvisorReply("Who won the World Series in 2024?"),
-    /only answer questions related to L’Oréal products/i
+    OFF_TOPIC_REFUSAL_MESSAGE
   );
 });

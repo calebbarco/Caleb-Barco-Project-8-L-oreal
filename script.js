@@ -20,15 +20,13 @@ const footerButtons = document.querySelectorAll(".footer-link-btn");
 
 // 2. Access helper functions loaded from advisor.js
 const {
-  DEFAULT_WORKER_URL,
   QUICK_PROMPTS,
-  isWorkerConfigured,
   buildRequestMessages,
   extractAssistantReply,
 } = globalThis.LorealAdvisor;
 
-// Replace this with your live Cloudflare Worker URL when deploying with OpenAI
-const WORKER_URL = DEFAULT_WORKER_URL;
+// Live Cloudflare Worker URL for all OpenAI Chat Completions requests
+const WORKER_URL = 'https://loreal-worker.cbarco21.workers.dev/';
 
 // 3. Track conversation history for multi-turn context
 let conversationHistory = [];
@@ -106,15 +104,12 @@ function renderQuickPrompts() {
   }
 }
 
-// 7. Send messages to OpenAI Chat Completions API via our secure server proxy (/api/chat) or Cloudflare Worker
+// 7. Send every chat request directly to the deployed Cloudflare Worker
 async function fetchAdvisorResponse(userText) {
   const messages = buildRequestMessages(conversationHistory, userText);
 
-  // Use the deployed Cloudflare Worker if configured; otherwise route safely through /api/chat
-  const endpoint = isWorkerConfigured(WORKER_URL) ? WORKER_URL : "/api/chat";
-
-  // Standard OpenAI Chat Completions POST payload (model + messages)
-  const response = await fetch(endpoint, {
+  // Route directly through the Cloudflare Worker -> OpenAI Chat Completions API
+  const response = await fetch(WORKER_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -126,7 +121,10 @@ async function fetchAdvisorResponse(userText) {
   const data = await response.json();
 
   if (!response.ok) {
-    const detail = data?.error || `Advisor service returned status ${response.status}`;
+    const detail =
+      data?.error?.message ||
+      (typeof data?.error === "string" ? data.error : null) ||
+      `Advisor service returned status ${response.status}`;
     throw new Error(detail);
   }
 

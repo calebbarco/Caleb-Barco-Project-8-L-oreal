@@ -17,12 +17,13 @@ const PORT = Number(process.env.PORT) || 3000;
 const HOST = "0.0.0.0";
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
-const { LOREAL_SYSTEM_PROMPT, getFallbackAdvisorReply } = globalThis.LorealAdvisor;
+const CLOUDFLARE_WORKER_URL = "https://loreal-worker.cbarco21.workers.dev/";
+const { LOREAL_SYSTEM_PROMPT } = globalThis.LorealAdvisor;
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
-// Server-side OpenAI proxy endpoint: keeps the API key off the client
+// Forward any /api/chat requests through the deployed Cloudflare Worker
 app.post("/api/chat", async (req, res) => {
   const { messages } = req.body || {};
 
@@ -53,53 +54,22 @@ app.post("/api/chat", async (req, res) => {
     ...conversationTurns,
   ];
 
-  const apiKey = (process.env.OPENAI_API_KEY || "").trim();
-
-  // If OPENAI_API_KEY is not configured in the environment, return curated local advisor guidance
-  if (!apiKey) {
-    const lastUserMessage =
-      [...sanitizedMessages].reverse().find((m) => m.role === "user")?.content || "";
-    return res.json({
-      source: "local-fallback",
-      choices: [
-        {
-          message: {
-            role: "assistant",
-            content: getFallbackAdvisorReply(lastUserMessage),
-          },
-        },
-      ],
-    });
-  }
-
   try {
-    const openAiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const workerResponse = await fetch(CLOUDFLARE_WORKER_URL, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4.1",
         messages: sanitizedMessages,
-        max_completion_tokens: 450,
       }),
     });
 
-    const data = await openAiResponse.json();
-
-    if (!openAiResponse.ok) {
-      const errorMessage =
-        data?.error?.message || `OpenAI API returned status ${openAiResponse.status}`;
-      console.error("OpenAI proxy error:", openAiResponse.status);
-      return res.status(openAiResponse.status).json({ error: errorMessage });
-    }
-
-    return res.json(data);
+    const data = await workerResponse.json();
+    return res.status(workerResponse.status).json(data);
   } catch (error) {
-    console.error("OpenAI proxy network failure:", error.message);
+    console.error("Cloudflare Worker proxy error:", error.message);
     return res.status(502).json({
-      error: "Unable to reach the OpenAI service right now. Please try again shortly.",
+      error: "Unable to reach the Cloudflare Worker right now. Please try again shortly.",
     });
   }
 });
