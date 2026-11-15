@@ -7,14 +7,31 @@ const {
   LOREAL_SYSTEM_PROMPT,
   OFF_TOPIC_REFUSAL_MESSAGE,
   isWorkerConfigured,
+  extractUserName,
+  summarizeConversationContext,
   buildRequestMessages,
+  parseFormattedSegments,
   extractAssistantReply,
   getFallbackAdvisorReply,
 } = (globalThis as unknown as { LorealAdvisor: any }).LorealAdvisor;
 
+test("parseFormattedSegments tokenizes bold and italic text safely", () => {
+  const segments = parseFormattedSegments(
+    "Try **Revitalift Serum** for _deep hydration_ today."
+  );
+  assert.deepEqual(segments, [
+    { type: "text", value: "Try " },
+    { type: "strong", value: "Revitalift Serum" },
+    { type: "text", value: " for " },
+    { type: "em", value: "deep hydration" },
+    { type: "text", value: " today." },
+  ]);
+});
+
 test("LOREAL_SYSTEM_PROMPT scopes assistant strictly to L'Oréal products and routines", () => {
   assert.match(LOREAL_SYSTEM_PROMPT, /Do not answer questions unrelated to L’Oréal or beauty/i);
   assert.match(LOREAL_SYSTEM_PROMPT, /politely refuse/i);
+  assert.match(LOREAL_SYSTEM_PROMPT, /their name/i);
 });
 
 test("isWorkerConfigured rejects default placeholder URL", () => {
@@ -26,17 +43,37 @@ test("isWorkerConfigured rejects default placeholder URL", () => {
   );
 });
 
-test("buildRequestMessages prepends system prompt and trims user input", () => {
+test("extractUserName detects explicit introductions without false positives", () => {
+  assert.equal(extractUserName("Hi, my name is Maya and I have dry skin."), "Maya");
+  assert.equal(extractUserName("You can call me Jordan."), "Jordan");
+  assert.equal(extractUserName("Hi, I'm Caleb, looking for a serum"), "Caleb");
+  assert.equal(extractUserName("I'm looking for a hydrating shampoo"), null);
+  assert.equal(extractUserName("I'm dry and need a moisturizer"), null);
+});
+
+test("summarizeConversationContext tracks user name and past questions", () => {
+  const summary = summarizeConversationContext([
+    { role: "user", content: "My name is Elena. What serum helps dry skin?" },
+    { role: "assistant", content: "Try Revitalift Hyaluronic Acid Serum." },
+    { role: "user", content: "What shampoo pairs well with frizzy hair?" },
+  ]);
+
+  assert.equal(summary.userName, "Elena");
+  assert.equal(summary.pastQuestions.length, 2);
+});
+
+test("buildRequestMessages prepends system prompt with tracked name and prior questions", () => {
   const history = [
-    { role: "user", content: "Hi" },
-    { role: "assistant", content: "Hello! How can I help?" },
+    { role: "user", content: "My name is Caleb. Recommend a hydrating cleanser." },
+    { role: "assistant", content: "Hello Caleb! Try Revitalift Glycolic Cleanser." },
   ];
-  const messages = buildRequestMessages(history, "  Skincare advice  ");
+  const messages = buildRequestMessages(history, "  And what moisturizer next?  ");
 
   assert.equal(messages[0].role, "system");
-  assert.equal(messages[0].content, LOREAL_SYSTEM_PROMPT);
+  assert.match(messages[0].content, /User's name: Caleb\./);
+  assert.match(messages[0].content, /Earlier questions in this conversation:/);
   assert.equal(messages.length, 4);
-  assert.deepEqual(messages[3], { role: "user", content: "Skincare advice" });
+  assert.deepEqual(messages[3], { role: "user", content: "And what moisturizer next?" });
 });
 
 test("buildRequestMessages rejects empty or whitespace-only input", () => {
