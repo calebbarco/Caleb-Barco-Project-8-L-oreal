@@ -25,7 +25,6 @@ const {
   isWorkerConfigured,
   buildRequestMessages,
   extractAssistantReply,
-  getFallbackAdvisorReply,
 } = globalThis.LorealAdvisor;
 
 // Replace this with your live Cloudflare Worker URL when deploying with OpenAI
@@ -107,14 +106,14 @@ function renderQuickPrompts() {
   }
 }
 
-// 7. Call the configured Cloudflare Worker OR our secure server-side /api/chat proxy
+// 7. Send messages to OpenAI Chat Completions API via our secure server proxy (/api/chat) or Cloudflare Worker
 async function fetchAdvisorResponse(userText) {
   const messages = buildRequestMessages(conversationHistory, userText);
 
-  // Use the deployed Cloudflare Worker if configured; otherwise use the secure server-side /api/chat proxy
+  // Use the deployed Cloudflare Worker if configured; otherwise route safely through /api/chat
   const endpoint = isWorkerConfigured(WORKER_URL) ? WORKER_URL : "/api/chat";
 
-  // Standard OpenAI-compatible POST pattern (uses gpt-4.1)
+  // Standard OpenAI Chat Completions POST payload (model + messages)
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -124,15 +123,18 @@ async function fetchAdvisorResponse(userText) {
     }),
   });
 
+  const data = await response.json();
+
   if (!response.ok) {
-    throw new Error(`Advisor service returned status ${response.status}`);
+    const detail = data?.error || `Advisor service returned status ${response.status}`;
+    throw new Error(detail);
   }
 
-  const data = await response.json();
+  // Extract data.choices[0].message.content
   return extractAssistantReply(data);
 }
 
-// 8. Core submission flow for both form submit and quick prompt clicks
+// 8. Capture user input, send the Chat Completions request, and display the assistant reply
 async function submitQuestion(rawText) {
   if (isSending) {
     return;
@@ -149,11 +151,11 @@ async function submitQuestion(rawText) {
   isSending = true;
   sendBtn.disabled = true;
 
-  // Show the user's message immediately
+  // Display the user's message immediately in the chat window
   appendMessage("user", cleanText);
   userInput.value = "";
 
-  // Show a temporary thinking message while awaiting the reply
+  // Show a temporary thinking message while awaiting the API response
   const loadingNode = appendMessage(
     "assistant",
     "Curating your L’Oréal recommendation…",
@@ -165,14 +167,14 @@ async function submitQuestion(rawText) {
     loadingNode.remove();
     appendMessage("assistant", reply);
 
-    // Save both turns into conversation history
+    // Save both turns into conversation history for follow-up context
     conversationHistory.push({ role: "user", content: cleanText });
     conversationHistory.push({ role: "assistant", content: reply });
   } catch (error) {
     loadingNode.remove();
     appendMessage(
       "assistant",
-      "We could not reach the advisor service right now. Please try again in a moment."
+      "We could not reach the advisor service right now. Please verify your API configuration and try again."
     );
     console.error("Advisor error:", error);
   } finally {
