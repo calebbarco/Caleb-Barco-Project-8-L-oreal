@@ -17,7 +17,7 @@ const PORT = Number(process.env.PORT) || 3000;
 const HOST = "0.0.0.0";
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
-const { getFallbackAdvisorReply } = globalThis.LorealAdvisor;
+const { LOREAL_SYSTEM_PROMPT, getFallbackAdvisorReply } = globalThis.LorealAdvisor;
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -30,11 +30,11 @@ app.post("/api/chat", async (req, res) => {
     return res.status(400).json({ error: "A non-empty messages array is required." });
   }
 
-  const sanitizedMessages = messages
+  const conversationTurns = messages
     .filter(
       (msg) =>
         msg &&
-        (msg.role === "system" || msg.role === "user" || msg.role === "assistant") &&
+        (msg.role === "user" || msg.role === "assistant") &&
         typeof msg.content === "string" &&
         msg.content.trim().length > 0
     )
@@ -43,9 +43,15 @@ app.post("/api/chat", async (req, res) => {
       content: msg.content.trim(),
     }));
 
-  if (sanitizedMessages.length === 0) {
+  if (conversationTurns.length === 0) {
     return res.status(400).json({ error: "No valid chat messages provided." });
   }
+
+  // Always enforce the server-controlled L'Oréal-only system prompt
+  const sanitizedMessages = [
+    { role: "system", content: LOREAL_SYSTEM_PROMPT },
+    ...conversationTurns,
+  ];
 
   const apiKey = (process.env.OPENAI_API_KEY || "").trim();
 

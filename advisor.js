@@ -8,9 +8,13 @@
 // Default placeholder URL from AGENTS.md — replace with your deployed Cloudflare Worker URL
 const DEFAULT_WORKER_URL = "https://loreal-chatbot.your-subdomain.workers.dev/";
 
-// System instruction sent to the Cloudflare Worker so the assistant stays focused on L'Oréal beauty advice
-const LOREAL_SYSTEM_PROMPT =
-  "You are the L'Oréal Smart Product Advisor. Help users discover L'Oréal skincare, haircare, makeup, and fragrance products, and build personalized daily or evening routines with clear application steps. Keep answers concise, warm, and practical.";
+// System instruction sent to OpenAI so the advisor ONLY answers L'Oréal product, routine, and recommendation questions
+const LOREAL_SYSTEM_PROMPT = [
+  "You are the L’Oréal Smart Product Advisor.",
+  "Only answer questions related to L’Oréal products, beauty routines, and personalized product recommendations across skincare, haircare, makeup, and fragrance.",
+  "Ask brief clarifying questions (such as skin type, hair concern, or finish preference) when helpful, and give clear, practical application steps.",
+  "If a user asks about anything unrelated to L’Oréal products, beauty routines, or recommendations, politely decline and invite them to ask about L’Oréal skincare, haircare, makeup, or fragrance instead.",
+].join(" ");
 
 // Curated starter prompts shown above the chat input
 const QUICK_PROMPTS = [
@@ -49,7 +53,7 @@ function isWorkerConfigured(workerUrl) {
   );
 }
 
-// Build the OpenAI-compatible messages array for the Cloudflare Worker request
+// Build the OpenAI-compatible messages array for the Cloudflare Worker or /api/chat request
 function buildRequestMessages(history, userText) {
   const cleanText = typeof userText === "string" ? userText.trim() : "";
   if (!cleanText) {
@@ -71,7 +75,7 @@ function buildRequestMessages(history, userText) {
   ];
 }
 
-// Safely extract the assistant's reply from the Cloudflare Worker JSON response
+// Safely extract the assistant's reply from the OpenAI JSON response
 function extractAssistantReply(data) {
   if (
     data &&
@@ -85,7 +89,7 @@ function extractAssistantReply(data) {
   throw new Error("Unexpected response format from assistant service.");
 }
 
-// Provide curated L'Oréal product & routine advice when no live Cloudflare Worker URL is configured
+// Provide curated L'Oréal product & routine advice (and polite off-topic redirection) when running without a live API key
 function getFallbackAdvisorReply(userText) {
   const query = (userText || "").toLowerCase();
 
@@ -94,7 +98,15 @@ function getFallbackAdvisorReply(userText) {
     query.includes("hydrat") ||
     query.includes("serum") ||
     query.includes("moistur") ||
+    query.includes("cleans") ||
     query.includes("spf") ||
+    query.includes("sunscreen") ||
+    query.includes("acne") ||
+    query.includes("wrinkl") ||
+    query.includes("anti-aging") ||
+    query.includes("glycolic") ||
+    query.includes("hyaluronic") ||
+    query.includes("retinol") ||
     query.includes("routine")
   ) {
     return [
@@ -110,9 +122,12 @@ function getFallbackAdvisorReply(userText) {
     query.includes("hair") ||
     query.includes("shampoo") ||
     query.includes("conditioner") ||
-    query.includes("dry") ||
+    query.includes("scalp") ||
     query.includes("damage") ||
-    query.includes("frizz")
+    query.includes("frizz") ||
+    query.includes("curl") ||
+    query.includes("color") ||
+    query.includes("elvive")
   ) {
     return [
       "For dry or stressed hair, try this two-step L'Oréal repair pairing:",
@@ -125,8 +140,12 @@ function getFallbackAdvisorReply(userText) {
   if (
     query.includes("makeup") ||
     query.includes("foundation") ||
+    query.includes("concealer") ||
     query.includes("lip") ||
     query.includes("mascara") ||
+    query.includes("blush") ||
+    query.includes("brow") ||
+    query.includes("eyeliner") ||
     query.includes("complexion") ||
     query.includes("cheek")
   ) {
@@ -144,6 +163,7 @@ function getFallbackAdvisorReply(userText) {
     query.includes("perfume") ||
     query.includes("scent") ||
     query.includes("cologne") ||
+    query.includes("parfum") ||
     query.includes("evening")
   ) {
     return [
@@ -155,10 +175,24 @@ function getFallbackAdvisorReply(userText) {
     ].join("\n");
   }
 
-  return [
-    "I can help you build a personalized L'Oréal routine across skincare, haircare, makeup, or fragrance.",
-    "Tell me your primary goal—such as hydration, hair repair, everyday complexion, or choosing a scent—and your skin or hair type for tailored recommendations.",
-  ].join("\n");
+  if (
+    query.includes("l'oréal") ||
+    query.includes("loreal") ||
+    query.includes("product") ||
+    query.includes("recommend") ||
+    query.includes("beauty") ||
+    query.includes("dry") ||
+    query.includes("oily") ||
+    query.includes("sensitive") ||
+    /^(hi|hello|hey|help)\b/.test(query.trim())
+  ) {
+    return [
+      "I can help you build a personalized L’Oréal routine across skincare, haircare, makeup, or fragrance.",
+      "Tell me your primary goal—such as hydration, hair repair, everyday complexion, or choosing a scent—and your skin or hair type for tailored recommendations.",
+    ].join("\n");
+  }
+
+  return "I’m the L’Oréal Smart Product Advisor, so I can only answer questions related to L’Oréal products, beauty routines, and personalized recommendations. Please ask about skincare, haircare, makeup, or fragrance!";
 }
 
 const LorealAdvisor = {
