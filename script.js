@@ -107,18 +107,15 @@ function renderQuickPrompts() {
   }
 }
 
-// 7. Call the Cloudflare Worker (or local L'Oréal advisor fallback if not yet configured)
+// 7. Call the configured Cloudflare Worker OR our secure server-side /api/chat proxy
 async function fetchAdvisorResponse(userText) {
   const messages = buildRequestMessages(conversationHistory, userText);
 
-  if (!isWorkerConfigured(WORKER_URL)) {
-    // Brief natural pause so the loading state is clear before displaying the recommendation
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    return getFallbackAdvisorReply(userText);
-  }
+  // Use the deployed Cloudflare Worker if configured; otherwise use the secure server-side /api/chat proxy
+  const endpoint = isWorkerConfigured(WORKER_URL) ? WORKER_URL : "/api/chat";
 
-  // Standard Cloudflare Worker POST pattern (uses gpt-4.1 on the worker side)
-  const response = await fetch(WORKER_URL, {
+  // Standard OpenAI-compatible POST pattern (uses gpt-4.1)
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
